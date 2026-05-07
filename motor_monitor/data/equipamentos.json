@@ -1,0 +1,32 @@
+[
+  {
+    "id": "1",
+    "tag": "MTR-001",
+    "modelo": "WEG W22",
+    "fabricante": "WEG",
+    "potencia_kw": 15.0,
+    "tensao_v": 380,
+    "corrente_nominal_a": 28.5,
+    "frequencia_hz": 60,
+    "n_polos": 4,
+    "velocidade_rpm": 1760,
+    "status": "Ativo",
+    "localizacao": "Linha de Produção A",
+    "data_cadastro": "2026-01-15"
+  },
+  {
+    "id": "2",
+    "tag": "MTR-002",
+    "modelo": "Siemens SIMOTICS",
+    "fabricante": "Siemens",
+    "potencia_kw": 7.5,
+    "tensao_v": 220,
+    "corrente_nominal_a": 14.2,
+    "frequencia_hz": 60,
+    "n_polos": 2,
+    "velocidade_rpm": 3520,
+    "status": "Em Manutenção",
+    "localizacao": "Compressor Central",
+    "data_cadastro": "2026-02-20"
+  }
+]
