@@ -77,13 +77,6 @@ valor_físico = raw × escala + offset
 
 ---
 
-## 🗺️ Roadmap
-
-- [x] **Sprint 1** — Cadastro e visualização de dados brutos
-- [ ] **Sprint 2** — Ingestão de dados reais de sensor
-- [ ] **Sprint 3** — Dashboard de alertas e histórico
-- [ ] **Sprint 4** — Modelo preditivo de manutenção
-
 ---
 
 FIAP · Challenge 2026
