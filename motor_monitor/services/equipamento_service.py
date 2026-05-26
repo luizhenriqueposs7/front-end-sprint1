@@ -67,3 +67,21 @@ def tag_existe(tag: str, ignorar_id: str = "") -> bool:
         e["tag"].upper() == tag.upper() and e["id"] != ignorar_id
         for e in _load()
     )
+
+
+def listar_localizacoes() -> list[str]:
+    """Retorna lista única de localizações cadastradas."""
+    locs = set()
+    for e in _load():
+        loc = e.get("localizacao", "").strip()
+        if loc:
+            locs.add(loc)
+    return sorted(locs)
+
+
+def buscar_por_localizacao(localizacao: str) -> list[dict]:
+    """Retorna equipamentos que pertencem a uma localização específica."""
+    return [
+        e for e in _load()
+        if e.get("localizacao", "").strip().lower() == localizacao.strip().lower()
+    ]

@@ -8,6 +8,8 @@ import random
 import math
 from typing import Optional
 
+from services.historico_service import classificar_status
+
 
 # ── Constantes de conversão ──────────────────────────────────────────────────
 # Simulam os parâmetros do circuito de condicionamento de sinal
@@ -80,18 +82,16 @@ def gerar_leitura(equipamento: Optional[dict] = None) -> dict:
 
 
 def avaliar_status(leitura: dict) -> str:
-    """Retorna status semântico com base nos desvios em relação ao nominal."""
-    desvios = []
+    """Retorna o pior status entre as grandezas usando os limites operacionais.
+
+    Mantém coerência entre o semáforo global, os cards individuais e os
+    eventos críticos do histórico, todos passando pela mesma função
+    classificar_status() do historico_service.
+    """
+    ordem = {"normal": 0, "atencao": 1, "critico": 2}
+    pior = "normal"
     for grandeza, dados in leitura.items():
-        if dados["nominal"] > 0:
-            desvio_pct = abs(dados["valor"] - dados["nominal"]) / dados["nominal"] * 100
-            desvios.append(desvio_pct)
-
-    max_desvio = max(desvios) if desvios else 0
-
-    if max_desvio < 5:
-        return "normal"
-    elif max_desvio < 12:
-        return "atencao"
-    else:
-        return "critico"
+        s = classificar_status(grandeza, dados["valor"], dados.get("nominal", 0))
+        if ordem[s] > ordem[pior]:
+            pior = s
+    return pior

@@ -51,7 +51,7 @@ st.markdown("""
 
 # ── Estado inicial ────────────────────────────────────────────────────────────
 if "pagina" not in st.session_state:
-    st.session_state["pagina"] = "consulta"
+    st.session_state["pagina"] = "dashboard"
 if "equipamento_selecionado" not in st.session_state:
     st.session_state["equipamento_selecionado"] = None
 
@@ -62,36 +62,68 @@ with st.sidebar:
     st.markdown("*Sistema de Gestão de Ativos*")
     st.divider()
 
-    # Navegação principal
-    st.markdown("### 📂 Menu")
+    # ── Sprint 2 — Visualização Operacional ──────────────────────────────────
+    st.markdown("### 📊 Visualização")
 
-    menu_itens = {
-        "consulta":     ("🏠", "Equipamentos"),
-        "cadastro":     ("➕", "Novo Cadastro"),
-        "dados_brutos": ("📡", "Dados do Sensor"),
+    menu_sprint2 = {
+        "dashboard":  ("📊", "Dashboard"),
+        "planta":     ("🏭", "Visão por Planta"),
+        "historico":  ("📈", "Histórico"),
     }
 
-    for pagina, (icone, label) in menu_itens.items():
+    for pagina, (icone, label) in menu_sprint2.items():
         ativo = st.session_state["pagina"] == pagina
-        estilo = "background:#1a7a4a22; border-left:3px solid #1a7a4a;" if ativo else ""
         if st.button(
             f"{icone}  {label}",
             key=f"menu_{pagina}",
             use_container_width=True,
         ):
             st.session_state["pagina"] = pagina
-            if pagina in ("cadastro", "dados_brutos") and pagina == "cadastro":
+            st.rerun()
+
+    st.divider()
+
+    # ── Sprint 1 — Gestão de Ativos ─────────────────────────────────────────
+    st.markdown("### 📂 Gestão")
+
+    menu_sprint1 = {
+        "consulta":     ("🏠", "Equipamentos"),
+        "cadastro":     ("➕", "Novo Cadastro"),
+        "dados_brutos": ("📡", "Dados do Sensor"),
+    }
+
+    for pagina, (icone, label) in menu_sprint1.items():
+        ativo = st.session_state["pagina"] == pagina
+        if st.button(
+            f"{icone}  {label}",
+            key=f"menu_{pagina}",
+            use_container_width=True,
+        ):
+            st.session_state["pagina"] = pagina
+            if pagina == "cadastro":
                 st.session_state["equipamento_selecionado"] = None
             st.rerun()
 
     st.divider()
-    st.caption("FIAP · Challenge 2026")
+    st.caption("FIAP · Challenge 2026 · Sprint 2")
 
 
 # ── Roteamento de páginas ─────────────────────────────────────────────────────
 pagina = st.session_state["pagina"]
 
-if pagina == "consulta":
+if pagina == "dashboard":
+    from pages.dashboard import render
+    render()
+
+elif pagina == "planta":
+    from pages.planta import render
+    render()
+
+elif pagina == "historico":
+    from pages.historico import render
+    render()
+
+elif pagina == "consulta":
     from pages.consulta import render
     render()
 

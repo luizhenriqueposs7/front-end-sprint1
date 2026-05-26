@@ -9,3 +9,4 @@ ENV/
 .DS_Store
 *.json
 !motor_monitor/data/equipamentos.json
+!motor_monitor/data/historico/*.json
