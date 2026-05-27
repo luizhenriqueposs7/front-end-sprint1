@@ -1,22 +1,66 @@
-# ⚙️ Motor Monitor — Sprint 1 + Sprint 2
+# ⚙️ Motor Monitor
 
-Sistema de gestão e monitoramento de ativos industriais desenvolvido com **Streamlit**.
+Sistema de gestão e monitoramento de ativos industriais (motores elétricos) desenvolvido em **Python + Streamlit**.
+
+> Challenge FIAP 2026 · Sprint 1 + Sprint 2
+
+---
+
+## 👥 Integrantes do grupo
+
+| Nome | RM |
+|------|----|
+| Lucca Phelipe Masini | 564121 |
+| Luiz Henrique Poss | 562177 |
+| Igor Paixão Sarak | 563726 |
+| Bernardo Braga Perobeli | 562468 |
+| Felipe Stefani Honorato | 563380 |
+
+---
 
 ## 🚀 Como rodar
 
-```bash
-# 1. Clone o repositório
-git clone <seu-repo>
+> ⚠️ Este é um projeto **Python**, não Node.js. Não use `npm` — não há `package.json`.
+
+### Pré-requisitos
+
+- Python 3.10 ou superior ([download](https://www.python.org/downloads/))
+- `pip` (vem junto com o Python)
+
+### Passo a passo (Windows / PowerShell)
+
+```powershell
+# 1. Entre na pasta do projeto
 cd motor_monitor
 
 # 2. Instale as dependências
 pip install -r requirements.txt
 
-# 3. Rode a aplicação
+# 3. Inicie a aplicação
 streamlit run app.py
 ```
 
-Acesse em `http://localhost:8501`
+A aplicação abre automaticamente em `http://localhost:8501`.
+
+Para encerrar: pressione `Ctrl+C` no terminal.
+
+### Porta ocupada?
+
+Se a 8501 já estiver em uso, rode em outra porta:
+
+```powershell
+streamlit run app.py --server.port 8502
+```
+
+### Linux / macOS
+
+Mesma sequência, trocando o terminal:
+
+```bash
+cd motor_monitor
+pip install -r requirements.txt
+streamlit run app.py
+```
 
 ---
 
@@ -27,24 +71,24 @@ motor_monitor/
 ├── app.py                          # Entry point e roteamento
 ├── requirements.txt
 ├── data/
-│   ├── equipamentos.json           # Persistência local (substituível por DB)
-│   └── historico/                   # Dados históricos por TAG (gerados automaticamente)
+│   ├── equipamentos.json           # Persistência local
+│   └── historico/                  # Histórico por TAG (gerado automaticamente)
 │       ├── MTR-001.json
 │       └── MTR-002.json
 ├── assets/                         # Imagens das placas dos motores
 │   ├── placa_MTR-001.png
 │   └── placa_MTR-002.png
 ├── pages/
-│   ├── consulta.py                 # Lista de equipamentos
-│   ├── cadastro.py                 # Formulário de cadastro/edição
-│   ├── dados_brutos.py             # Visualização com conversão de sinal
-│   ├── dashboard.py                # Dashboard de telemetria (Sprint 2)
-│   ├── planta.py                   # Navegação por Planta/Área (Sprint 2)
-│   └── historico.py                # Gráficos de séries temporais (Sprint 2)
+│   ├── consulta.py                 # Lista de equipamentos          (Sprint 1)
+│   ├── cadastro.py                 # Formulário de cadastro/edição  (Sprint 1)
+│   ├── dados_brutos.py             # Sinal ADC → unidade física     (Sprint 1)
+│   ├── dashboard.py                # Dashboard de telemetria        (Sprint 2)
+│   ├── planta.py                   # Navegação por planta/área      (Sprint 2)
+│   └── historico.py                # Séries temporais e eventos     (Sprint 2)
 └── services/
     ├── equipamento_service.py      # CRUD de equipamentos
-    ├── sensor_service.py           # Mock de sensores + conversão ADC → unidade física
-    └── historico_service.py        # Geração e leitura de dados históricos (Sprint 2)
+    ├── sensor_service.py           # Mock de sensores + conversão ADC
+    └── historico_service.py        # Geração e leitura de histórico + classificação de status
 ```
 
 ### Por que essa separação?
@@ -57,31 +101,54 @@ motor_monitor/
 
 ---
 
-## 📊 Sprint 2 — Visualização Operacional
+## 📊 Funcionalidades
 
-### Dashboard de Telemetria
-- **Gauges Plotly** para cada grandeza (Temperatura, Vibração, Corrente, Tensão, RPM)
-- **Semáforo de saúde global** com indicador colorido (verde/amarelo/vermelho)
-- **Sparklines** com evolução das últimas 24h
-- **Integração da placa do motor** com dados técnicos extraídos
+### Sprint 1 — Cadastro técnico e leitura de sensores
 
-### Navegação por Planta/Área
-- Visão macro por localização com contagem de ativos por status
-- Cards individuais de cada motor com badges de telemetria
-- Navegação direta para o dashboard do motor selecionado
+- Cadastro de equipamentos com TAG única, fabricante, modelo, parâmetros elétricos e mecânicos
+- Leitura simulada de 5 grandezas (Tensão, Corrente, RPM, Temperatura, Vibração)
+- Conversão de sinal ADC 12 bits (0–4095) para unidade física
+- Página de dados brutos com tabela de conversão visível ao operador
+- Persistência em JSON local
 
-### Gráficos de Séries Temporais
-- Gráficos interativos Plotly com zoom, pan e hover
-- **Faixas de limite operacional** (Normal / Atenção / Crítico)
-- Gráfico combinado com normalização para comparação entre grandezas
-- **Tabela de eventos críticos** com timestamps de anomalias
-- **Exportação CSV** dos dados filtrados
+### Sprint 2 — Visualização operacional
+
+- **Dashboard de telemetria** — semáforo global de saúde, 5 gauges Plotly com cor por status e sparklines das últimas 24h
+- **Navegação por planta/área** — visão macro com contagem de motores por estado de saúde e drill-down direto pro dashboard
+- **Séries temporais** — gráficos por grandeza com faixas de limite (normal/atenção/crítico) sombreadas, gráfico combinado normalizado e seletor de período (7/15/30 dias)
+- **Eventos críticos** — tabela com timestamps dos momentos em que pelo menos uma grandeza ficou crítica
+- **Exportação CSV** — download dos dados filtrados pelo período
+- **Placa do motor** — imagem da placa associada aos dados técnicos extraídos via visão computacional
 
 ---
 
-## 📡 Conversão de sinal bruto (Sprint 1)
+## 🎨 Cores semânticas
 
-Os sensores retornam sinais digitais de **12 bits (0–4095)** via ADC. A conversão aplicada é:
+| Estado | Cor | Significado |
+|--------|-----|-------------|
+| 🟢 Normal | `#10b981` | Dentro dos limites operacionais |
+| 🟡 Atenção | `#f59e0b` | Próximo dos limites |
+| 🔴 Crítico | `#ef4444` | Acima dos limites |
+
+---
+
+## 🔧 Limites operacionais
+
+| Grandeza | Normal | Atenção | Crítico |
+|----------|--------|---------|---------|
+| Temperatura | ≤ 75°C | ≤ 90°C | > 90°C |
+| Vibração | ≤ 4,5 mm/s | ≤ 7,0 mm/s | > 7,0 mm/s |
+| Corrente | desvio < 5% | < 12% | > 12% |
+| Tensão | desvio < 5% | < 10% | > 10% |
+| RPM | desvio < 3% | < 8% | > 8% |
+
+Toda a classificação passa por `services/historico_service.classificar_status`, garantindo que o semáforo global, os cards individuais e a tabela de eventos críticos usem exatamente os mesmos limites.
+
+---
+
+## 📡 Conversão de sinal ADC
+
+Os sensores retornam sinais digitais de **12 bits (0–4095)**. A conversão aplicada é linear:
 
 ```
 valor_físico = raw × escala + offset
@@ -97,25 +164,22 @@ valor_físico = raw × escala + offset
 
 ---
 
-## 🎨 Cores semânticas
+## 🏗️ Arquitetura
 
-| Estado | Cor | Significado |
-|--------|-----|-------------|
-| 🟢 Normal | `#10b981` | Desvio < 5% / Dentro dos limites |
-| 🟡 Atenção | `#f59e0b` | Desvio entre 5–12% / Próximo dos limites |
-| 🔴 Crítico | `#ef4444` | Desvio > 12% / Acima dos limites |
+Separação em três camadas independentes:
+
+- **`pages/`** — interface Streamlit, sem regra de negócio
+- **`services/`** — lógica de dados (CRUD, mock de sensores, geração de histórico, classificação de status)
+- **`data/`** — persistência local em JSON, substituível por banco de dados sem tocar nas demais camadas
+
+A lógica de classificação de status (normal/atenção/crítico) é centralizada em uma função única e usada por todas as páginas, garantindo coerência entre o semáforo global do dashboard, os cards da visão por planta e a extração de eventos críticos no histórico.
 
 ---
 
-## 🔧 Limites Operacionais (Sprint 2)
+## 🔗 Links
 
-| Grandeza | Normal | Atenção | Crítico |
-|----------|--------|---------|---------|
-| Temperatura | ≤ 75°C | ≤ 90°C | > 90°C |
-| Vibração | ≤ 4.5 mm/s | ≤ 7.0 mm/s | > 7.0 mm/s |
-| Corrente | < 5% desvio | < 12% desvio | > 12% desvio |
-| Tensão | < 5% desvio | < 10% desvio | > 10% desvio |
-| RPM | < 3% desvio | < 8% desvio | > 8% desvio |
+- 📦 [Repositório no GitHub](https://github.com/luizhenriqueposs7/front-end-sprint1)
+- 🎥 Vídeo de demonstração — _(adicionar link após upload)_
 
 ---
 
