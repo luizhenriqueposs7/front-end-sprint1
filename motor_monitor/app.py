@@ -51,7 +51,7 @@ st.markdown("""
 
 # ── Estado inicial ────────────────────────────────────────────────────────────
 if "pagina" not in st.session_state:
-    st.session_state["pagina"] = "dashboard"
+    st.session_state["pagina"] = "alertas"
 if "equipamento_selecionado" not in st.session_state:
     st.session_state["equipamento_selecionado"] = None
 
@@ -60,6 +60,17 @@ if "equipamento_selecionado" not in st.session_state:
 with st.sidebar:
     st.markdown("## ⚙️ Motor Monitor")
     st.markdown("*Sistema de Gestão de Ativos*")
+    st.divider()
+
+    # ── Sprint 3 — Inteligência Operacional ──────────────────────────────────
+    st.markdown("### 🚨 Inteligência Operacional")
+
+    for pagina, (icone, label) in {"alertas": ("🚨", "Painel de Alertas")}.items():
+        if st.button(f"{icone}  {label}", key=f"menu_{pagina}", use_container_width=True,
+                     type="primary" if st.session_state["pagina"] == pagina else "secondary"):
+            st.session_state["pagina"] = pagina
+            st.rerun()
+
     st.divider()
 
     # ── Sprint 2 — Visualização Operacional ──────────────────────────────────
@@ -105,13 +116,17 @@ with st.sidebar:
             st.rerun()
 
     st.divider()
-    st.caption("FIAP · Challenge 2026 · Sprint 2")
+    st.caption("FIAP · Challenge 2026 · Sprint 3")
 
 
 # ── Roteamento de páginas ─────────────────────────────────────────────────────
 pagina = st.session_state["pagina"]
 
-if pagina == "dashboard":
+if pagina == "alertas":
+    from pages.alertas import render
+    render()
+
+elif pagina == "dashboard":
     from pages.dashboard import render
     render()
 

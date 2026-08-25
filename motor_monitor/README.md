@@ -2,7 +2,7 @@
 
 Sistema de gestão e monitoramento de ativos industriais (motores elétricos) desenvolvido em **Python + Streamlit**.
 
-> Challenge FIAP 2026 · Sprint 1 + Sprint 2
+> Challenge FIAP 2026 · Sprint 1 + Sprint 2 + Sprint 3
 
 ---
 
@@ -69,9 +69,12 @@ streamlit run app.py
 ```
 motor_monitor/
 ├── app.py                          # Entry point e roteamento
+├── components.py                   # Cards reutilizáveis (alerta, estado, evento)
 ├── requirements.txt
+├── test_alertas.py                 # Checagem da camada de alertas
 ├── data/
 │   ├── equipamentos.json           # Persistência local
+│   ├── alertas.json                # Caixa de entrada dos alertas (gerada em runtime)
 │   └── historico/                  # Histórico por TAG (gerado automaticamente)
 │       ├── MTR-001.json
 │       └── MTR-002.json
@@ -79,6 +82,7 @@ motor_monitor/
 │   ├── placa_MTR-001.png
 │   └── placa_MTR-002.png
 ├── pages/
+│   ├── alertas.py                  # Painel de alertas e estados        (Sprint 3)
 │   ├── consulta.py                 # Lista de equipamentos          (Sprint 1)
 │   ├── cadastro.py                 # Formulário de cadastro/edição  (Sprint 1)
 │   ├── dados_brutos.py             # Sinal ADC → unidade física     (Sprint 1)
@@ -88,7 +92,9 @@ motor_monitor/
 └── services/
     ├── equipamento_service.py      # CRUD de equipamentos
     ├── sensor_service.py           # Mock de sensores + conversão ADC
-    └── historico_service.py        # Geração e leitura de histórico + classificação de status
+    ├── historico_service.py        # Geração e leitura de histórico + classificação de status
+    ├── alerta_service.py           # Alertas do pipeline analítico       (Sprint 3)
+    └── nlp_service.py              # Resumos em linguagem natural        (Sprint 3)
 ```
 
 ### Por que essa separação?
@@ -96,6 +102,7 @@ motor_monitor/
 | Camada | Responsabilidade | Quando mudar |
 |--------|-----------------|--------------|
 | `pages/` | Interface do usuário | Redesign visual, migração de framework |
+| `components.py` | Cards reutilizáveis | Ajuste de identidade visual |
 | `services/` | Lógica de dados | Trocar mock por sensor real, adicionar ML |
 | `data/` | Persistência | Migrar para banco de dados |
 
@@ -119,6 +126,80 @@ motor_monitor/
 - **Eventos críticos** — tabela com timestamps dos momentos em que pelo menos uma grandeza ficou crítica
 - **Exportação CSV** — download dos dados filtrados pelo período
 - **Placa do motor** — imagem da placa associada aos dados técnicos extraídos via visão computacional
+
+### Sprint 3 — Inteligência operacional e apoio à decisão
+
+- **Painel de Alertas e Estados** — página inicial do sistema, antes de escolher qualquer equipamento: mostra de uma vez o estado de todos os ativos monitorados
+- **Estado dinâmico do ativo** — o card muda de 🟢 Saudável para 🟡 Atenção ou 🔴 Crítico conforme os alertas chegam, e volta a Saudável quando são reconhecidos
+- **Resumos em linguagem natural** — cada alerta e cada estado vem com um texto explicando o desvio, a hipótese técnica e o que fazer (ver *Integração com NLP* abaixo)
+- **Apoio à decisão** — cards de recomendação com ação concreta e prazo, sempre voltados ao alerta mais severo em aberto
+- **Atualização por botão ou timer** — `🔄 Atualizar agora` roda uma varredura sob demanda; o toggle de atualização automática dispara a varredura a cada 10 s, 30 s ou 1 min
+- **Notificação de alerta novo** — cada anomalia detectada aparece como toast na tela, além de entrar nos cards
+- **Histórico de eventos** — tabela com todos os alertas registrados, em aberto ou já reconhecidos
+- **Baixa operacional** — `✅ Reconhecer` por alerta ou `✅ Reconhecer todos` para voltar o painel ao estado saudável
+
+---
+
+## 🧠 Integração com NLP
+
+Os resumos textuais são gerados hoje por **template determinístico** em `services/nlp_service.py`. O contrato já é o definitivo:
+
+```python
+resumir_alerta(alerta)                 -> str   # resumo de um alerta
+descrever_estado(tag, estado, alertas) -> str   # resumo do estado do ativo
+```
+
+Quando o modelo de NLP ficar pronto, há dois caminhos — nenhum deles toca as páginas:
+
+1. O pipeline analítico grava o texto no campo `resumo_nlp` do alerta. `resumir_alerta()` devolve esse texto e ignora o template.
+2. Ou troca-se o corpo das duas funções pela chamada ao modelo.
+
+A interface mostra a procedência do texto no próprio card (`RESUMO AUTOMÁTICO (TEMPLATE)` vs `RESUMO GERADO POR NLP`), então dá para plugar o modelo aos poucos, alerta por alerta.
+
+---
+
+## 🔌 De onde vêm os alertas
+
+O front-end **não executa modelo nenhum**. `data/alertas.json` é uma caixa de entrada: quem escreve é o pipeline analítico (detecção de anomalia + NLP), que roda fora do Streamlit. A interface só consome:
+
+```python
+listar_alertas()            # alertas já classificados
+estado_dos_equipamentos()   # estado consolidado por ativo
+reconhecer_alerta(id)       # baixa operacional
+```
+
+Enquanto o modelo real não existe, `_detectar()` em `services/alerta_service.py` simula a detecção. Trocar essa função por um consumidor de API, fila MQTT ou banco **não muda uma linha das páginas** — o formato do alerta é o contrato:
+
+```json
+{
+  "id": "ALM-0001",
+  "tag": "MTR-001",
+  "equipamento_id": "1",
+  "grandeza": "vibracao",
+  "valor": 8.4,
+  "unidade": "mm/s",
+  "nominal": 2.5,
+  "severidade": "critico",
+  "score_anomalia": 0.92,
+  "modelo_analitico": "IsolationForest v0.1",
+  "resumo_nlp": null,
+  "recomendacoes": [{ "titulo": "...", "acao": "...", "prazo": "Imediato" }],
+  "reconhecido": false
+}
+```
+
+O estado do equipamento é sempre a **pior severidade entre os alertas não reconhecidos** — é o que faz o card mudar de cor sem a página precisar saber como o modelo chegou lá.
+
+---
+
+## ✅ Testes
+
+```powershell
+cd motor_monitor
+python test_alertas.py
+```
+
+Cobre a consolidação de estado, a baixa de alerta, o fallback do resumo do NLP e o formato de saída do detector.
 
 ---
 
