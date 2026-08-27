@@ -83,11 +83,11 @@ with st.sidebar:
     }
 
     for pagina, (icone, label) in menu_sprint2.items():
-        ativo = st.session_state["pagina"] == pagina
         if st.button(
             f"{icone}  {label}",
             key=f"menu_{pagina}",
             use_container_width=True,
+            type="primary" if st.session_state["pagina"] == pagina else "secondary",
         ):
             st.session_state["pagina"] = pagina
             st.rerun()
@@ -104,11 +104,11 @@ with st.sidebar:
     }
 
     for pagina, (icone, label) in menu_sprint1.items():
-        ativo = st.session_state["pagina"] == pagina
         if st.button(
             f"{icone}  {label}",
             key=f"menu_{pagina}",
             use_container_width=True,
+            type="primary" if st.session_state["pagina"] == pagina else "secondary",
         ):
             st.session_state["pagina"] = pagina
             if pagina == "cadastro":

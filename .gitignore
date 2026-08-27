@@ -10,3 +10,7 @@ ENV/
 *.json
 !motor_monitor/data/equipamentos.json
 !motor_monitor/data/historico/*.json
+
+# Caixa de entrada dos alertas: escrita em runtime pelo pipeline analitico
+motor_monitor/data/alertas.json
+motor_monitor/data/*.tmp

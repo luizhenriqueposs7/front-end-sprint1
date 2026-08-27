@@ -25,7 +25,12 @@ from services.alerta_service import (
     reconhecer_todos,
     verificar_novos_alertas,
 )
-from services.nlp_service import descrever_estado, fonte_do_resumo, resumir_alerta
+from services.nlp_service import (
+    descrever_estado,
+    fonte_do_resumo,
+    formatar_numero,
+    resumir_alerta,
+)
 
 INTERVALOS = {"10 segundos": 10, "30 segundos": 30, "1 minuto": 60}
 
@@ -38,12 +43,10 @@ def _consultar_pipeline() -> list[dict]:
     st.session_state["alertas_ultima_atualizacao"] = time.strftime("%H:%M:%S")
     st.session_state["alertas_ultima_checagem"] = time.monotonic()
     for a in novos:
-        emoji = ui.EMOJI[a["severidade"]]
-        nome = ui.NOME_GRANDEZA.get(a["grandeza"], a["grandeza"])
-        st.toast(
-            f"{emoji} **{a['tag']}** · {nome} em {a['valor']} {a['unidade']}",
-            icon="🔔",
-        )
+        emoji = ui.EMOJI.get(a.get("severidade"), "🔔")
+        nome = ui.NOME_GRANDEZA.get(a.get("grandeza"), a.get("grandeza", "grandeza"))
+        medida = f"{formatar_numero(a.get('valor', '—'))} {a.get('unidade', '')}".strip()
+        st.toast(f"{emoji} **{a.get('tag', '—')}** · {nome} em {medida}", icon="🔔")
     return novos
 
 
@@ -86,7 +89,7 @@ def _painel() -> None:
     estados = estado_dos_equipamentos()
     contagem_estados = {"normal": 0, "atencao": 0, "critico": 0}
     for e in estados:
-        contagem_estados[e["estado"]] += 1
+        contagem_estados[e["estado"]] = contagem_estados.get(e["estado"], 0) + 1
 
     # ── KPIs ──────────────────────────────────────────────────────────────────
     st.markdown("")
@@ -141,13 +144,13 @@ def _painel() -> None:
             ui.card_alerta(a, resumir_alerta(a), fonte_do_resumo(a))
             b1, b2, _ = st.columns([1.1, 1.1, 3])
             with b1:
-                if st.button("✅ Reconhecer", key=f"ack_{a['id']}", use_container_width=True):
-                    reconhecer_alerta(a["id"])
-                    st.toast(f"Alerta {a['id']} reconhecido.", icon="✅")
+                if st.button("✅ Reconhecer", key=f"ack_{a.get('id')}", use_container_width=True):
+                    reconhecer_alerta(a.get("id"))
+                    st.toast(f"Alerta {a.get('id','—')} reconhecido.", icon="✅")
                     st.rerun(scope="fragment")
             with b2:
-                if st.button("📈 Ver histórico", key=f"hist_{a['id']}", use_container_width=True):
-                    st.session_state["equipamento_selecionado"] = a["equipamento_id"]
+                if st.button("📈 Ver histórico", key=f"hist_{a.get('id')}", use_container_width=True):
+                    st.session_state["equipamento_selecionado"] = a.get("equipamento_id")
                     st.session_state["pagina"] = "historico"
                     st.rerun(scope="app")
 
@@ -158,7 +161,7 @@ def _painel() -> None:
         st.markdown(
             f"### 🧭 Apoio à Decisão "
             f"<span style='color:#6b7280;font-size:0.6em;'>plano sugerido para "
-            f"{prioritario['tag']} · {prioritario['id']}</span>",
+            f"{ui.escapar(prioritario.get('tag','—'))} · {ui.escapar(prioritario.get('id','—'))}</span>",
             unsafe_allow_html=True,
         )
         recomendacoes = prioritario.get("recomendacoes", [])
@@ -166,7 +169,8 @@ def _painel() -> None:
         for col, rec in zip(cols_rec, recomendacoes):
             with col:
                 ui.card_recomendacao(
-                    rec["titulo"], rec["acao"], rec["prazo"], prioritario["severidade"]
+                    rec.get("titulo", "Ação sugerida"), rec.get("acao", "—"),
+                    rec.get("prazo", "A definir"), prioritario.get("severidade", "atencao"),
                 )
 
     # ── Histórico de eventos ──────────────────────────────────────────────────

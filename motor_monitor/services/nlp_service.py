@@ -51,6 +51,9 @@ _HIPOTESE = {
     "rpm": "escorregamento fora do esperado ou perda de torque",
 }
 
+# Severidade legível: o texto é lido por operador, não por log.
+_SEVERIDADE_LEGIVEL = {"normal": "normal", "atencao": "atenção", "critico": "crítico"}
+
 _ABERTURA = {
     "atencao": "Desvio moderado detectado",
     "critico": "Anomalia severa detectada",
@@ -67,17 +70,50 @@ def fonte_do_resumo(alerta: dict) -> str:
     return FONTE_MODELO if (alerta.get("resumo_nlp") or "").strip() else FONTE_TEMPLATE
 
 
-def _limite_de_referencia(grandeza: str, nominal: float) -> tuple[float, str]:
-    """Retorna (limite de atenção, descrição) para a grandeza.
+def formatar_numero(valor, casas: int = 2, remover_zeros: bool = True) -> str:
+    """Número no padrão brasileiro: 1.760 · 32,72 · 28,5.
 
-    Temperatura e vibração têm limite absoluto; as demais são percentuais
-    sobre o valor nominal do equipamento.
+    Mora aqui porque é a mesma regra de idioma dos resumos; `components.py`
+    importa esta função para não existirem dois formatadores divergentes.
+    `remover_zeros=False` para casas fixas — é o caso do score de anomalia,
+    que precisa sair igual no selo do card e no texto (0,90, não 0,9).
+    """
+    try:
+        v = float(valor)
+    except (TypeError, ValueError):
+        return str(valor)
+    texto = f"{v:,.{casas}f}"
+    if remover_zeros:
+        texto = texto.rstrip("0").rstrip(".")
+    return texto.translate(str.maketrans({",": ".", ".": ","}))
+
+
+def _comparacao(grandeza: str, valor: float, nominal: float) -> str:
+    """Traduz o desvio para a referência que o operador reconhece.
+
+    Temperatura e vibração comparam com o limite absoluto do projeto; as
+    demais comparam com o nominal de placa, que é o número da plaqueta.
     """
     cfg = LIMITES.get(grandeza, {})
-    if "atencao" in cfg:
-        return cfg["atencao"], f"limite de atenção de {cfg['atencao']} {_UNIDADE[grandeza]}"
-    pct = cfg.get("atencao_pct", 10)
-    return nominal * (1 + pct / 100), f"tolerância de {pct}% sobre o nominal de {nominal:g} {_UNIDADE[grandeza]}"
+    un = _UNIDADE.get(grandeza, "")
+
+    if "atencao" in cfg:  # limite absoluto
+        limite = cfg["atencao"]
+        excesso = (valor - limite) / limite * 100 if limite else 0
+        if excesso > 0:
+            return (f"{formatar_numero(excesso, 1)}% acima do limite de atenção "
+                    f"de {formatar_numero(limite)} {un}")
+        return (f"ainda abaixo do limite de atenção de {formatar_numero(limite)} {un}, "
+                f"porém fora do padrão histórico")
+
+    if nominal:  # tolerância percentual sobre o nominal
+        desvio = (valor - nominal) / nominal * 100
+        lado = "acima" if desvio >= 0 else "abaixo"
+        return (f"{formatar_numero(abs(desvio), 1)}% {lado} do nominal de "
+                f"{formatar_numero(nominal)} {un} "
+                f"(tolerância de {cfg.get('atencao_pct', 10)}%)")
+
+    return "fora do padrão histórico"
 
 
 def resumir_alerta(alerta: dict) -> str:
@@ -86,30 +122,28 @@ def resumir_alerta(alerta: dict) -> str:
     if texto:
         return texto  # o modelo real já escreveu — nada a fazer aqui
 
-    g = alerta.get("grandeza", "vibracao")
+    # .get() em toda parte: a grandeza vem do pipeline analítico, que é externo.
+    # Um nome fora do contrato tem que degradar o texto, nunca derrubar a tela.
+    g = alerta.get("grandeza", "")
     sev = alerta.get("severidade", "atencao")
-    valor = float(alerta.get("valor", 0))
-    nominal = float(alerta.get("nominal", 0) or 0)
-    limite, descricao_limite = _limite_de_referencia(g, nominal)
-    score = float(alerta.get("score_anomalia", 0))
+    try:
+        valor = float(alerta.get("valor", 0))
+        nominal = float(alerta.get("nominal", 0) or 0)
+        score = float(alerta.get("score_anomalia", 0))
+    except (TypeError, ValueError):
+        valor = nominal = score = 0.0
 
-    if limite > 0:
-        excedente = (valor - limite) / limite * 100
-        comparacao = (
-            f"{excedente:.0f}% acima da {descricao_limite}"
-            if excedente > 0
-            else f"dentro da {descricao_limite}, porém fora do padrão histórico"
-        )
-    else:
-        comparacao = "fora do padrão histórico"
+    hipotese = _HIPOTESE.get(g)
+    causa = f" e o padrão é compatível com {hipotese}" if hipotese else ""
 
     return (
         f"{_ABERTURA.get(sev, 'Desvio detectado')} em **{alerta.get('tag', '—')}**: "
-        f"{_NOME[g]} de {valor:g} {_UNIDADE[g]}, {comparacao}. "
-        f"O modelo classificou o comportamento como *{sev}* "
-        f"(score de anomalia {score:.2f}) e o padrão é compatível com {_HIPOTESE[g]}. "
+        f"{_NOME.get(g, g or 'grandeza monitorada')} de {formatar_numero(valor)} "
+        f"{_UNIDADE.get(g, '')}, {_comparacao(g, valor, nominal)}. "
+        f"O modelo classificou o comportamento como *{_SEVERIDADE_LEGIVEL.get(sev, sev)}* "
+        f"(score de anomalia {formatar_numero(score, 2, remover_zeros=False)}){causa}. "
         f"{_FECHAMENTO.get(sev, '')}"
-    )
+    ).replace("  ", " ")
 
 
 def descrever_estado(tag: str, estado: str, alertas: list[dict]) -> str:
@@ -120,7 +154,9 @@ def descrever_estado(tag: str, estado: str, alertas: list[dict]) -> str:
             f"últimas leituras analisadas pelo modelo."
         )
 
-    grandezas = sorted({_NOME[a["grandeza"]] for a in alertas})
+    # `or "—"` porque um alerta pode chegar com grandeza null; sorted() de uma
+    # lista com None e str estoura TypeError.
+    grandezas = sorted({_NOME.get(a.get("grandeza")) or a.get("grandeza") or "—" for a in alertas})
     lista = grandezas[0] if len(grandezas) == 1 else ", ".join(grandezas[:-1]) + f" e {grandezas[-1]}"
     n = len(alertas)
     plural = "desvio ativo" if n == 1 else "desvios ativos"

@@ -19,7 +19,10 @@ quando o modelo passar a rodar em outro processo.
 """
 
 import json
+import os
 import random
+import re
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -28,6 +31,17 @@ from services.equipamento_service import listar_equipamentos
 from services.historico_service import LIMITES
 
 ALERTAS_PATH = Path(__file__).parent.parent / "data" / "alertas.json"
+
+# Toda escrita é ler-alterar-gravar o arquivo inteiro. O Streamlit atende cada
+# aba numa thread, e com o timer ligado duas abas gravam ao mesmo tempo: sem o
+# lock, uma sobrescreve a outra e os dois alertas saem com o mesmo id — o que
+# derruba a página com DuplicateWidgetID.
+# ponytail: lock de processo. Vira lock de arquivo/banco quando o pipeline
+# gravar de fora do Streamlit.
+_LOCK = threading.RLock()
+
+# Teto do arquivo. Com o timer ligado a noite toda, isso cresce sem parar.
+MAX_HISTORICO = 200
 
 # Ordem de severidade — usada para consolidar o estado do ativo.
 ORDEM_SEVERIDADE = {"normal": 0, "atencao": 1, "critico": 2}
@@ -84,19 +98,35 @@ def _load() -> list[dict]:
 
 
 def _save(alertas: list[dict]) -> None:
+    """Grava em arquivo temporário e troca de nome.
+
+    os.replace é atômico: se o processo morrer no meio da escrita, o
+    alertas.json antigo continua íntegro em vez de virar um JSON truncado que
+    quebra a aplicação em toda abertura.
+    """
     ALERTAS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(ALERTAS_PATH, "w", encoding="utf-8") as f:
+    # Nome do temporário por processo: se dois processos gravarem juntos, o
+    # os.replace do Windows estoura PermissionError num .tmp compartilhado.
+    temporario = ALERTAS_PATH.with_suffix(f".{os.getpid()}.tmp")
+    with open(temporario, "w", encoding="utf-8") as f:
         json.dump(alertas, f, ensure_ascii=False, indent=2)
+    os.replace(temporario, ALERTAS_PATH)
 
 
 # ── Leitura (o que a interface usa) ───────────────────────────────────────────
+
+def _peso(severidade) -> int:
+    """Severidade desconhecida vale 0 — o pipeline é externo e pode evoluir o
+    vocabulário sem avisar; um valor novo não pode derrubar o painel."""
+    return ORDEM_SEVERIDADE.get(severidade, 0)
+
 
 def listar_alertas(apenas_ativos: bool = False) -> list[dict]:
     """Alertas do mais recente para o mais antigo."""
     alertas = _load()
     if apenas_ativos:
         alertas = [a for a in alertas if not a.get("reconhecido")]
-    return sorted(alertas, key=lambda a: a["timestamp"], reverse=True)
+    return sorted(alertas, key=lambda a: a.get("timestamp", ""), reverse=True)
 
 
 def contar_por_severidade(alertas: list[dict]) -> dict:
@@ -117,61 +147,86 @@ def estado_dos_equipamentos() -> list[dict]:
     ativos = listar_alertas(apenas_ativos=True)
     estados = []
     for eq in listar_equipamentos():
-        do_ativo = [a for a in ativos if a["equipamento_id"] == eq["id"]]
+        do_ativo = [a for a in ativos if a.get("equipamento_id") == eq["id"]]
         estado = "normal"
         for a in do_ativo:
-            if ORDEM_SEVERIDADE[a["severidade"]] > ORDEM_SEVERIDADE[estado]:
+            if _peso(a.get("severidade")) > _peso(estado):
                 estado = a["severidade"]
         estados.append({"equipamento": eq, "estado": estado, "alertas": do_ativo})
     # Piores primeiro — quem precisa de ação aparece no topo.
-    return sorted(estados, key=lambda e: -ORDEM_SEVERIDADE[e["estado"]])
+    return sorted(estados, key=lambda e: -_peso(e["estado"]))
 
 
 def alerta_mais_severo(alertas: list[dict]) -> Optional[dict]:
     """Alerta que deve puxar o painel de apoio à decisão."""
     if not alertas:
         return None
-    return max(alertas, key=lambda a: (ORDEM_SEVERIDADE[a["severidade"]], a.get("score_anomalia", 0)))
+    return max(alertas, key=lambda a: (_peso(a.get("severidade")), a.get("score_anomalia", 0)))
 
 
 # ── Escrita (baixa operacional) ───────────────────────────────────────────────
 
 def reconhecer_alerta(alerta_id: str) -> bool:
-    alertas = _load()
-    for a in alertas:
-        if a["id"] == alerta_id and not a.get("reconhecido"):
-            a["reconhecido"] = True
-            a["reconhecido_em"] = datetime.now().isoformat(timespec="seconds")
-            _save(alertas)
-            return True
-    return False
+    with _LOCK:
+        alertas = _load()
+        for a in alertas:
+            if a.get("id") == alerta_id and not a.get("reconhecido"):
+                a["reconhecido"] = True
+                a["reconhecido_em"] = datetime.now().isoformat(timespec="seconds")
+                _save(alertas)
+                return True
+        return False
 
 
 def reconhecer_todos() -> int:
     """Zera o painel — usado para voltar a demonstração ao estado saudável."""
-    alertas = _load()
-    n = 0
-    for a in alertas:
-        if not a.get("reconhecido"):
-            a["reconhecido"] = True
-            a["reconhecido_em"] = datetime.now().isoformat(timespec="seconds")
-            n += 1
-    if n:
-        _save(alertas)
-    return n
+    with _LOCK:
+        alertas = _load()
+        n = 0
+        for a in alertas:
+            if not a.get("reconhecido"):
+                a["reconhecido"] = True
+                a["reconhecido_em"] = datetime.now().isoformat(timespec="seconds")
+                n += 1
+        if n:
+            _save(alertas)
+        return n
+
+
+_PADRAO_ID = re.compile(r"^ALM-(\d+)$")
+
+
+def _proximo_id(alertas: list[dict]) -> str:
+    """Maior número já usado + 1.
+
+    Contar o tamanho da lista não serve: quando o histórico é podado em
+    MAX_HISTORICO, len() volta atrás e o id novo colide com um antigo.
+    """
+    usados = [int(m.group(1)) for m in
+              (_PADRAO_ID.match(str(a.get("id", ""))) for a in alertas) if m]
+    return f"ALM-{max(usados, default=0) + 1:04d}"
 
 
 def registrar_alerta(alerta: dict) -> dict:
     """Ponto de entrada do pipeline analítico. Hoje só o simulador usa;
     amanhã o consumidor da fila do modelo chama esta mesma função."""
-    alertas = _load()
-    alerta.setdefault("id", f"ALM-{len(alertas) + 1:04d}")
-    alerta.setdefault("timestamp", datetime.now().isoformat(timespec="seconds"))
-    alerta.setdefault("reconhecido", False)
-    alerta.setdefault("resumo_nlp", None)  # preenchido pelo NLP quando existir
-    alertas.append(alerta)
-    _save(alertas)
-    return alerta
+    with _LOCK:
+        alertas = _load()
+        alerta.setdefault("id", _proximo_id(alertas))
+        alerta.setdefault("timestamp", datetime.now().isoformat(timespec="seconds"))
+        alerta.setdefault("reconhecido", False)
+        alerta.setdefault("resumo_nlp", None)  # preenchido pelo NLP quando existir
+        alertas.append(alerta)
+        # Poda os mais antigos JÁ RECONHECIDOS primeiro: um alerta em aberto
+        # nunca some do painel por causa do teto.
+        if len(alertas) > MAX_HISTORICO:
+            abertos = [a for a in alertas if not a.get("reconhecido")]
+            fechados = [a for a in alertas if a.get("reconhecido")]
+            sobra = max(MAX_HISTORICO - len(abertos), 0)
+            alertas = fechados[-sobra:] + abertos if sobra else abertos
+            alertas.sort(key=lambda a: a.get("timestamp", ""))
+        _save(alertas)
+        return alerta
 
 
 # ── Simulador do modelo analítico (substituível) ──────────────────────────────
@@ -195,7 +250,9 @@ def _valor_anomalo(eq: dict, grandeza: str, severidade: str) -> float:
         pct = random.uniform(cfg["normal_pct"] + 1, cfg["atencao_pct"]) / 100
     else:
         pct = random.uniform(cfg["atencao_pct"] + 1, cfg["atencao_pct"] * 2) / 100
-    return round(nominal * (1 + pct), 2)
+    # Desvio para os dois lados: subtensão e queda de rotação são falhas tão
+    # comuns quanto sobrecarga, e classificar_status() já usa o módulo.
+    return round(nominal * (1 + random.choice((1, -1)) * pct), 2)
 
 
 def _recomendacoes(grandeza: str, severidade: str) -> list[dict]:
