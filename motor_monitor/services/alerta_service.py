@@ -90,11 +90,60 @@ _ACAO_POR_SEVERIDADE = {
 
 # ── Persistência ──────────────────────────────────────────────────────────────
 
+# Último problema de leitura da caixa de entrada, para a página avisar em vez
+# de morrer. Quem escreve o arquivo é um sistema externo: JSON quebrado ou com
+# outro formato é cenário real, não hipótese.
+_ERRO_LEITURA: Optional[str] = None
+
+
+def erro_da_fonte() -> Optional[str]:
+    """Problema conhecido com a caixa de entrada, ou None.
+
+    A quarentena é verificada NO DISCO, não numa variável: logo depois de
+    mover o arquivo quebrado, a próxima leitura encontra a caixa nova e
+    limparia um aviso em memória antes de alguém ver.
+    """
+    quarentenas = sorted(ALERTAS_PATH.parent.glob(f"{ALERTAS_PATH.stem}.corrompido-*"))
+    if quarentenas:
+        return (f"{ALERTAS_PATH.name} veio ilegível e foi movido para "
+                f"{quarentenas[-1].name} — os alertas anteriores estão lá, não foram "
+                f"apagados. Apague esse arquivo para dispensar o aviso.")
+    return _ERRO_LEITURA
+
+
+def _quarentena() -> str:
+    """Guarda a caixa de entrada ilegível de lado, em vez de deixar a próxima
+    gravação passar por cima dela. Nada é apagado: o arquivo só muda de nome.
+    """
+    destino = ALERTAS_PATH.with_suffix(f".corrompido-{datetime.now():%Y%m%d%H%M%S}")
+    try:
+        os.replace(ALERTAS_PATH, destino)
+        return f"{ALERTAS_PATH.name} ilegível — movido para {destino.name}"
+    except OSError:
+        # Sem quarentena no disco, o aviso só existe nesta variável.
+        return f"{ALERTAS_PATH.name} ilegível e não foi possível movê-lo"
+
+
 def _load() -> list[dict]:
+    global _ERRO_LEITURA
     if not ALERTAS_PATH.exists():
+        _ERRO_LEITURA = None
         return []
-    with open(ALERTAS_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        with open(ALERTAS_PATH, "r", encoding="utf-8") as f:
+            dados = json.load(f)
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as e:
+        _ERRO_LEITURA = f"{_quarentena()} ({e.__class__.__name__}: {e})"
+        return []
+    if not isinstance(dados, list):
+        _ERRO_LEITURA = f"{_quarentena()} (o conteúdo não é uma lista de alertas)"
+        return []
+    # Descarta entradas que não são objetos em vez de estourar lá na frente.
+    validos = [a for a in dados if isinstance(a, dict)]
+    descartados = len(dados) - len(validos)
+    _ERRO_LEITURA = (f"{descartados} entrada(s) de {ALERTAS_PATH.name} ignorada(s) "
+                     f"por não serem objetos de alerta.") if descartados else None
+    return validos
 
 
 def _save(alertas: list[dict]) -> None:

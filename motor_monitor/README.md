@@ -190,6 +190,12 @@ Enquanto o modelo real não existe, `_detectar()` em `services/alerta_service.py
 
 O estado do equipamento é sempre a **pior severidade entre os alertas não reconhecidos** — é o que faz o card mudar de cor sem a página precisar saber como o modelo chegou lá.
 
+Como quem escreve o arquivo é um sistema externo, a leitura é defensiva:
+
+- Campo fora do contrato (grandeza ou severidade que a interface não conhece) degrada o texto, não derruba a tela.
+- JSON quebrado não trava a aplicação: o arquivo vai para `alertas.corrompido-<data>` — nada é apagado — e o painel mostra um aviso até alguém remover esse arquivo.
+- A gravação é atômica (`os.replace`) e protegida por lock, para duas abas com o timer ligado não sobrescreverem uma à outra.
+
 ---
 
 ## ✅ Testes
@@ -199,7 +205,7 @@ cd motor_monitor
 python test_alertas.py
 ```
 
-Cobre a consolidação de estado, a baixa de alerta, o fallback do resumo do NLP e o formato de saída do detector.
+13 checagens sem framework: consolidação de estado, baixa de alerta, fallback do resumo do NLP, formato de saída do detector, gravação concorrente, poda do histórico, payload fora do contrato, escape de HTML, arquivo corrompido e formatação numérica.
 
 ---
 

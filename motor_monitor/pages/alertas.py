@@ -19,6 +19,7 @@ import components as ui
 from services.alerta_service import (
     alerta_mais_severo,
     contar_por_severidade,
+    erro_da_fonte,
     estado_dos_equipamentos,
     listar_alertas,
     reconhecer_alerta,
@@ -87,6 +88,13 @@ def _painel() -> None:
 
     alertas_ativos = listar_alertas(apenas_ativos=True)
     estados = estado_dos_equipamentos()
+
+    # A caixa de entrada é escrita por um sistema externo: se vier quebrada, o
+    # painel avisa em vez de mostrar "tudo saudável" por não ter lido nada.
+    problema = erro_da_fonte()
+    if problema:
+        st.error(f"Falha ao ler a fonte de alertas: {problema}", icon="⚠️")
+
     contagem_estados = {"normal": 0, "atencao": 0, "critico": 0}
     for e in estados:
         contagem_estados[e["estado"]] = contagem_estados.get(e["estado"], 0) + 1
@@ -164,7 +172,7 @@ def _painel() -> None:
             f"{ui.escapar(prioritario.get('tag','—'))} · {ui.escapar(prioritario.get('id','—'))}</span>",
             unsafe_allow_html=True,
         )
-        recomendacoes = prioritario.get("recomendacoes", [])
+        recomendacoes = [r for r in prioritario.get("recomendacoes") or [] if isinstance(r, dict)]
         cols_rec = st.columns(max(len(recomendacoes), 1))
         for col, rec in zip(cols_rec, recomendacoes):
             with col:

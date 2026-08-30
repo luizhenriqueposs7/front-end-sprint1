@@ -14,3 +14,4 @@ ENV/
 # Caixa de entrada dos alertas: escrita em runtime pelo pipeline analitico
 motor_monitor/data/alertas.json
 motor_monitor/data/*.tmp
+motor_monitor/data/alertas.corrompido-*

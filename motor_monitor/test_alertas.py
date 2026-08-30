@@ -149,6 +149,35 @@ def test_texto_do_cadastro_nao_vira_html():
     assert _md("**WEG <b>W22</b>**") == "<b>WEG &lt;b&gt;W22&lt;/b&gt;</b>"
 
 
+def test_caixa_de_entrada_corrompida_nao_derruba_nem_apaga():
+    """Quem escreve alertas.json é um sistema externo: JSON quebrado acontece."""
+    al.reconhecer_todos()
+    _alerta("critico")
+    original = al.ALERTAS_PATH.read_text(encoding="utf-8")
+    al.ALERTAS_PATH.write_text('{"isso": "não é uma lista"', encoding="utf-8")
+
+    assert al.listar_alertas() == [], "leitura tinha que degradar, não estourar"
+    assert al.erro_da_fonte(), "a página precisa saber que a fonte falhou"
+
+    # O conteúdo antigo continua no disco, só que de lado.
+    quarentena = list(al.ALERTAS_PATH.parent.glob("alertas.corrompido-*"))
+    assert quarentena, "arquivo ilegível foi apagado em vez de posto em quarentena"
+
+    # E o painel volta a funcionar a partir de uma caixa nova.
+    novo = _alerta("atencao")
+    assert [a["id"] for a in al.listar_alertas()] == [novo["id"]]
+
+    # O aviso NÃO some só porque a leitura seguinte deu certo — ele acompanha
+    # o arquivo em quarentena, senão o banner pisca e ninguém vê.
+    assert al.erro_da_fonte(), "aviso sumiu antes de alguém poder ler"
+    for q in quarentena:
+        q.unlink()
+    assert al.erro_da_fonte() is None, "aviso deveria sair junto com a quarentena"
+
+    al.ALERTAS_PATH.write_text(original, encoding="utf-8")
+    al.reconhecer_todos()
+
+
 def test_numero_sai_no_padrao_brasileiro():
     assert formatar_numero(32.72) == "32,72"
     assert formatar_numero(1760) == "1.760"
