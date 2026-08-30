@@ -266,7 +266,7 @@ A lógica de classificação de status (normal/atenção/crítico) é centraliza
 ## 🔗 Links
 
 - 📦 [Repositório no GitHub](https://github.com/luizhenriqueposs7/front-end-sprint1)
-- 🎥 Vídeo de demonstração — _(adicionar link após upload)_
+- 🎥 [Vídeo de demonstração](https://youtu.be/32fB96fe1GU)
 
 ---
 
